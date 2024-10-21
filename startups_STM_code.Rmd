@@ -1,0 +1,671 @@
+## Loading packages:
+
+```{r}
+library(RSelenium)
+library(tidyverse)
+library(rvest)
+library(xml2)
+library(netstat)
+library(httr)
+library(jsonlite)
+```
+
+## Automated scraping of startup data from Inc42.com/datalabs using Rselenium driver
+```{r}
+
+url<- "https://inc42.com/company"
+
+# Start the Selenium server:
+rD <- rsDriver(browser=c("firefox"), verbose = F, port = netstat::free_port(random = TRUE), chromever = NULL) 
+driver <- rD[["client"]] 
+
+# Navigate to the selected URL address
+driver$navigate(url)
+
+#wait for 1 seconds
+Sys.sleep(1)
+
+# Find the login button
+login <- driver$findElement(using = 'css selector', value = '.loggin-btn')
+
+# Click the login button
+login$clickElement()
+
+# Wait for 10 seconds to enter the password manually, one time
+Sys.sleep(10)
+
+# Loop through each row and extract the data
+# Initialize an empty list to store the data
+list_of_companies <- list()
+
+# Define the range of rows to scrape
+start_row <- 1
+end_row <- 700
+
+# Function to extract data for a given range of rows
+while (start_row <= end_row) {
+  for (i in start_row:min(end_row, start_row + 24)) {
+    tryCatch({
+      # Construct the CSS selector with the current value of i
+      company_selector <- paste0('div.MuiDataGrid-row:nth-child(', i - (start_row - 1), ') > div.MuiDataGrid-cell:nth-child(1) > div.first-table-row > div.company_details > button')
+
+      # Extract the data
+      company <- driver$findElement(using = 'css selector', company_selector)$getElementText()
+
+      sector_selector <- paste0('div.MuiDataGrid-row:nth-child(', i - (start_row - 1), ') > div.MuiDataGrid-cell:nth-child(2) > p')
+      sector <- driver$findElement(using = 'css selector', sector_selector)$getElementText()
+
+      founding_year_selector <- paste0('div.MuiDataGrid-row:nth-child(', i - (start_row - 1), ') > div.MuiDataGrid-cell:nth-child(3) > div.MuiDataGrid-cellContent')
+      founding_year <- driver$findElement(using = 'css selector', founding_year_selector)$getElementText()
+
+      funding_selector <- paste0('div.MuiDataGrid-row:nth-child(', i - (start_row - 1), ') > div.MuiDataGrid-cell:nth-child(4) > p')
+      funding <- driver$findElement(using = 'css selector', funding_selector)$getElementText()
+
+      hq_selector <- paste0('div.MuiDataGrid-row:nth-child(', i - (start_row - 1), ') > div.MuiDataGrid-cell:nth-child(5) > div.MuiDataGrid-cellContent')
+      hq <- driver$findElement(using = 'css selector', hq_selector)$getElementText()
+      
+      founders_selector <- paste0('div.MuiDataGrid-row:nth-child(', i - (start_row - 1), ') > div.MuiDataGrid-cell:nth-child(6) > p')
+      founders <- driver$findElement(using = 'css selector', founders_selector)$getElementText()
+      
+      country_selector <- paste0('div.MuiDataGrid-row:nth-child(', i - (start_row - 1), ') > div.MuiDataGrid-cell:nth-child(7) > div.MuiDataGrid-cellContent')
+      country <- driver$findElement(using = 'css selector', country_selector)$getElementText()
+
+      funding_type_selector <- paste0('div.MuiDataGrid-row:nth-child(', i - (start_row - 1), ') > div.MuiDataGrid-cell:nth-child(8) > div.MuiDataGrid-cellContent')
+      funding_type <- driver$findElement(using = 'css selector', funding_type_selector)$getElementText()
+
+      funding_stage_selector <- paste0('div.MuiDataGrid-row:nth-child(', i - (start_row - 1), ') > div.MuiDataGrid-cell:nth-child(9) > div.MuiDataGrid-cellContent')
+      funding_stage <- driver$findElement(using = 'css selector', funding_stage_selector)$getElementText()
+
+      IPO_status_selector <- paste0('div.MuiDataGrid-row:nth-child(', i - (start_row - 1), ') > div.MuiDataGrid-cell:nth-child(10) > div.MuiDataGrid-cellContent')
+      IPO_status <- driver$findElement(using = 'css selector', IPO_status_selector)$getElementText()
+
+      linkedin_url_selector <- paste0('div.MuiDataGrid-row:nth-child(', i - (start_row - 1), ') > div.MuiDataGrid-cell:nth-child(11) > a')
+      linkedin_url <- driver$findElement(using = 'css selector', linkedin_url_selector)$getElementAttribute("href")
+      
+      investors_selector <- paste0('div.MuiDataGrid-row:nth-child(', i - (start_row - 1), ') > div.MuiDataGrid-cell:nth-child(12) > div.MuiDataGrid-cellContent')
+      investors <- driver$findElement(using = 'css selector', investors_selector)$getElementText()
+      
+      employees_selector <- paste0('div.MuiDataGrid-row:nth-child(', i - (start_row - 1), ') > div.MuiDataGrid-cell:nth-child(14) > div.MuiDataGrid-cellContent')
+      employees <- driver$findElement(using = 'css selector', employees_selector)$getElementText()
+
+      # Store the data in a dictionary
+      company_dict <- list(
+        company = company,
+        funding = funding,
+        founding_year = founding_year,
+        sector = sector,
+        hq = hq,
+        founders = founders,
+        country = country,
+        funding_type = funding_type,
+        funding_stage = funding_stage,
+        IPO_status = IPO_status,
+        linkedin_url = linkedin_url,
+        investors = investors,
+        employees = employees
+      )
+      list_of_companies[[i]] <- company_dict
+    }, error = function(e) {
+      cat("Error occurred at iteration", i, ":", conditionMessage(e), "\n")
+      # Optionally, you can save the error message to a log file
+      # write(conditionMessage(e), file = "error.log", append = TRUE)
+    })
+  }
+  
+  # Find and click next button
+  if (end_row > start_row + 24) {
+    next_button <- driver$findElement(using = 'css selector', 'div.MuiTablePagination-actions > button:nth-child(2)')$clickElement()
+  }
+  Sys.sleep(2) # Wait for page to load
+  start_row <- start_row + 25
+}
+
+# Stop the Selenium server
+driver$close()
+
+#Create a dataframe from the list of dictionaries:
+# Convert the list of dictionaries into a list of lists
+list_of_lists <- lapply(list_of_companies, function(x) unlist(x))
+
+# Convert the list of lists into a data frame
+list_of_companies_df <- as.data.frame(do.call(rbind, list_of_lists), stringsAsFactors = FALSE)
+
+# save df as csv
+# write.csv(list_of_companies_df, "startup_aboutcompany_2018-24_final.csv", row.names = FALSE)
+
+```
+## Sraping About section text descriptions from static HTML codes of LinkedIn URLs
+
+```{r}
+# Load the dataset
+#list_of_companies_df <- read.csv("startups_2018-24_FINAL.csv")
+
+# Extract the About description for each startup company from their LinkedIn URLs
+for (i in 1:nrow(list_of_companies_df)) {
+  html <- read_html(list_of_companies_df$linkedin_url[i])
+  Sys.sleep(1)
+  about <- html %>% html_elements(css = "section.core-section-container:nth-child(1) > div.core-section-container__content > p") %>% html_text()
+  
+  # Check if about is not empty before assigning
+  if (length(about) > 0) {
+    list_of_companies_df$description[i] <- about
+  } else {
+    about <- html %>% html_elements(css = "div.org-about-module__description > div.ember-view > span") %>% html_text()
+    # Check if about is not empty before assigning
+    if (length(about) > 0) {
+      list_of_companies_df$description[i] <- about
+    } else {
+      list_of_companies_df$description[i] <- NA  # or any placeholder value
+      message("No description found for company:", list_of_companies_df$company[i])
+    }
+  }
+  
+  # Introduce a time delay of 3 seconds between HTTP requests
+  Sys.sleep(3)
+}
+
+# Run a loop for extracting follower counts from LinkedIn htmls
+for (i in 660:nrow(list_of_companies_df)) {
+  html <- read_html(list_of_companies_df$linkedin_url[i])
+  Sys.sleep(1)
+  
+  followers <- html %>% html_elements(css = "h3.top-card-layout__first-subline") %>% html_text()
+  
+  # Check if about is not empty before assigning
+  if (length(followers) > 0) {
+    list_of_companies_df$followers[i] <- followers
+  } else {
+    followers <- html %>% html_elements(css = "div.inline-block > div.org-top-card-summary-info-list__info-item:nth-child(2)") %>% html_text()
+    # Check if about is not empty before assigning
+    if (length(followers) > 0) {
+      list_of_companies_df$description[i] <- about
+    } else {
+    list_of_companies_df$followers[i] <- NA  # or any placeholder value
+    message("No followers found for company:", list_of_companies_df$company[i])
+    }
+  }
+  
+  # Introduce a time delay of 3 seconds between HTTP requests
+  Sys.sleep(1)
+  message("Processed company: ", i)
+}
+
+followers <- list_of_companies_df$followers
+#write.csv(followers, "followers.csv", row.names = FALSE)
+
+# Extract just the digits before and after the comma from the followers column
+list_of_companies_df$followers <- as.numeric(gsub("\\D", "", gsub(".*?(\\d{1,3},?\\d{1,3})\\s*followers.*", "\\1", list_of_companies_df$followers)))
+
+
+# Save the updated dataframe to a CSV file
+#write.csv(list_of_companies_df, "startup_2018-24_linkedin.csv", row.names = FALSE)
+
+## Clean the dataset - Manually find the text descriptions of companies, remove observations with invalid/missing URLs or Descriptions, etc.
+
+```
+
+```{r}
+library(dplyr)
+
+# Load the dataset
+startups_df <- read.csv("startup_aboutcompany_2018-24_final.csv")
+
+# Remove rows with missing LinkedIn URLs
+# Find all rows for which URLs don't match a particular pattern
+invalid_urls <- grep("https://*", startups_df$linkedin_url, invert = TRUE)
+startups_df_cleaned <- startups_df[-invalid_urls, ]
+
+# Filter rows with missing descriptions(NA) or "Today, BharatPe*"
+startups_df_nodesc <- startups_df_cleaned %>% filter(is.na(description) | grepl(pattern = "Today, BharatPe*", startups_df_cleaned$description))
+nodesc_rowid <- which(is.na(startups_df_cleaned$description) | grepl(pattern = "Today, BharatPe*", startups_df_cleaned$description))
+
+# Create a variable of URLs against which description could not be found through automated scraper
+nodesc_urls <- startups_df_cleaned$linkedin_url[nodesc_rowid]
+
+# Create a dataframe for manual description extraction
+manual_desc_df <- data.frame(company = startups_df_nodesc$company, row_id = nodesc_rowid, linkedin_url = nodesc_urls, description = NA)
+
+# Load csv file containing manually extracted About descriptions
+linkedin_abouts <- read.csv("linkedin_abouts.csv", stringsAsFactors = FALSE, sep = "\t")
+
+# Merge the two dataframes
+manual_desc_df$description <- unlist(lapply(linkedin_abouts, function(x) {
+  str_replace_all(x, pattern = "^\\d+,\\s*", replacement = "")
+})) # Remove the leading row_id numbers and commas
+
+# Replace the missing descriptions in the original dataframe
+for (i in manual_desc_df$row_id) {
+  startups_df_cleaned$description[i] <- manual_desc_df$description[manual_desc_df$row_id == i]
+}
+
+# Remove rows with missing descriptions
+startups_df_cleaned <- startups_df_cleaned %>% filter(!is.na(description))
+
+# Remove the \n characters from the description
+startups_df_cleaned$description <- gsub("\n", " ", startups_df_cleaned$description)
+
+# Save the cleaned dataset
+#write.csv(startups_df_cleaned, "startup_aboutcompany_2018-24_cleaned.csv", row.names = FALSE)
+
+# Load the cleaned dataset
+startups_df_main <- read.csv("startup_aboutcompany_2018-24_cleaned.csv")
+
+# Remove rows with missing(NA) descriptions
+startups_df <- startups_df_main %>% filter(!is.na(description))
+
+# Save the cleaned dataset
+# write.csv(startups_df, "startups_2018-24_FINAL.csv", row.names = FALSE)
+
+```
+## Prepare data for STM modelling inputs
+```{r, fig.height=5, fig.width=9}
+# Load the required libraries for STM 
+library("quanteda")
+library("stm")
+library("tidyverse")
+library("stringi")
+library("lubridate")
+
+# Load the cleaned dataset
+startups_df <- read.csv("startup_2018-24_linkedin.csv")
+
+# Convert the funding column into numeric format
+# Function to convert funding info to numeric values
+convert_funding <- function(funding_str) {
+  # Remove "$" and " Mn" from the string
+  clean_str <- gsub("\\$| Mn", "", funding_str)
+  
+  # Convert string to numeric value
+  numeric_value <- as.numeric(clean_str)
+  
+  return(numeric_value)
+}
+
+# Apply the conversion function to the funding column of the dataframe
+startups_df$funding <- sapply(startups_df$funding, convert_funding)
+
+# Convert the columns into appropriate/required formats
+startups_df$country <- factor(startups_df$country)
+startups_df$founding_year <- as.numeric(startups_df$founding_year)
+startups_df$sector <- factor(startups_df$sector)
+startups_df$hq <- factor(startups_df$hq)
+startups_df$funding_type <- factor(startups_df$funding_type)
+startups_df$funding_stage <- factor(startups_df$funding_stage)
+startups_df$IPO_status <- factor(startups_df$IPO_status)
+startups_df$investors <- as.numeric(startups_df$investors)
+startups_df$employees <- as.numeric(startups_df$employees)
+
+# Remove rows with descriptions that are less than 7 words long
+word_count <- stri_count_words(startups_df$description)
+startups_df <- startups_df %>% filter(word_count > 7)
+
+# Find the unique values for hq and country == India
+unique(startups_df$hq[startups_df$country == "India"])
+
+# Create a tiered city classification within startups_df
+# Tier 1 Cities
+Tier_1 <- c("Bengaluru", "Gurugram", "Mumbai", "New Delhi", "Chennai", "Noida", "Hyderabad", "Pune", "Ahmedabad", "Navi Mumbai", "Andheri", "Kolkata")
+
+# Tier 2 Cities
+Tier_2 <- c("Vadodara", "Jaipur", "Bhubaneswar", "Mohali", "Alwar", "Cochin", "Udaipur", "Surat", "Chandigarh", "Ahmednagar", "Lucknow")
+  
+Tier_3 <- c("Kota", "Tirunelveli", "Ratnagiri")
+
+#Find the startups_df$hq values that are 'not in' Tier_1
+cities <- startups_df$hq[(startups_df$country == "India")]
+
+for (i in 1:length(cities)) {
+  if (cities[i] %in% Tier_1) {
+    startups_df$city_tier[i] <- "Tier_1"
+  } else if (cities[i] %in% Tier_2) {
+    startups_df$city_tier[i] <- "Tier_2"
+  } else {
+    startups_df$city_tier[i] <- "Tier_3"
+  }
+}
+
+# Convert the city tier column into factor
+startups_df$city_tier <- factor(startups_df$city_tier)
+
+# Perform one-hot encoding for the country, finding_stage, and city_tier columns
+startups_df_encoded <- startups_df %>% select(city_tier, country, funding_stage)
+startups_df_encoded <- model.matrix(~ ., data = startups_df_encoded)
+# Change the column names to remove the intercept column
+colnames(startups_df_encoded) <- gsub("country|funding_stage|city_tier", "", colnames(startups_df_encoded))
+colnames(startups_df_encoded) <- gsub("\\(Intercept\\)", "Tier_1", colnames(startups_df_encoded))
+
+# Add the one-hot encoded columns to the main dataframe
+startups_df <- cbind(startups_df, startups_df_encoded)
+
+# Select all colnames except the description
+colnames <- setdiff(colnames(startups_df), "description")
+
+# Create a corpus from the description column
+description_corpus <- corpus(startups_df$description,
+                       docvars = startups_df[,colnames])
+
+# Create a document-feature matrix
+description_dfm <- description_corpus %>%
+  tokens(remove_punct = TRUE, remove_numbers = TRUE, remove_symbols = TRUE,
+         remove_url = TRUE) %>%
+  tokens_tolower() %>%
+  tokens_remove(stopwords("en"), padding = TRUE) %>%
+  dfm() %>%
+  dfm_trim(min_termfreq = 10)
+  
+  
+# Convert the quanteda dfm to a stm format
+stm_input <- convert(description_dfm, to = "stm")
+
+# Find optimal number of topics using the searchK() function
+#k_search_output <- searchK(stm_input$documents, stm_input$vocab, K = c(5:26), data = stm_input$meta, verbose = FALSE, heldout.seed = 123)
+
+plot(k_search_output)
+k_search_output
+
+
+# Create a dataframe from the searchK() output
+k_search_output_df <- data.frame(K = c(5:26), exclusivity = c(5:26), residual = c(5:26), semantic_coherence = c(5:26))
+# Extract the results from the searchK() output
+k_search_output_df$K <- unlist(k_search_output$results$K)
+k_search_output_df$exclusivity <- unlist(k_search_output$results$exclus)
+k_search_output_df$residual <- unlist(k_search_output$results$residual)
+k_search_output_df$semantic_coherence <- unlist(k_search_output$results$semcoh)
+
+
+# Plot a scatter plot for the exclusivity, residual and semantic coherence graphs in a row
+par(mfrow = c(1, 3))
+# Highlight topic number 17 across all these plots
+plot(k_search_output_df$K, k_search_output_df$exclusivity, type = "b", xlab = "Number of Topics (K)", ylab = "Exclusivity")
+plot(k_search_output_df$K, k_search_output_df$residual, type = "b", xlab = "Number of Topics (K)", ylab = "Residual")
+plot(k_search_output_df$K, k_search_output_df$semantic_coherence, type = "b", xlab = "Number of Topics (K)", ylab = "Semantic Coherence")
+
+# Apply the STM model with the optimal number of topics
+set.seed(123)
+stmodel_1 <- stm(documents = stm_input$documents, vocab = stm_input$vocab,
+                 K = 17, data = stm_input$meta,
+                 prevalence = ~ sector,
+                 verbose = FALSE, init.type = "Spectral")
+# Plot the topics and their prevalence
+plot(stmodel_1, type = "summary", labeltype = "frex")
+
+# Find the top documents for each topic
+top_docs <- findThoughts(stmodel_1,
+                          texts = startups_df$description[rowSums(description_dfm)>0],
+                          n = 5, topics = c(1:17))
+
+# Find top words for each topic
+labelTopics(stmodel_2, n = 10, c(1:17), frexweight = 0.5)
+
+```
+## Topic Distribution Per Company Histogram
+```{r, fig.height=5, fig.width=8}
+
+# Make dataframe of the prevalence of topics and STM metadata
+topicprop_meta_df <- make.dt(stmodel_1, stm_input$meta)
+
+# Remove the first column (document number) from the dataframe
+topicprop_meta_df <- topicprop_meta_df[, -1]
+
+# Change topic column names to custom names
+colnames(topicprop_meta_df)[1:17] <- c("T1:Fashion, Beauty & Lifestyle", "T2:Business Intelligence & Productivity", "T3:Investor Branding", "T4:Business Process Automation & Enterprise Solutions", "T5:EdTech", "T6:AI & IT Security", "T7:Business Accelerators", "T8:Media & Gaming", "T9:Electric Mobility & Sustainable Tech", "T10:Supply Chain & Logistics", "T11:Wealth & Asset Management Solutions", "T12:Healthcare & Wellness", "T13:Financial Investments & Stock Trading", "T14:Travel & Impact Creation", "T15:Debt Financing", "T16:AgriTech & Farm2Consumer", "T17:Payments Infrastructure")
+
+# Create a histogram for the distribution of topics for every company using topicprop_meta_df
+# Use a for loop across each row and add condition of > than 0.05 for topic proportion
+# Initialize topic_count column
+topicprop_meta_df$topic_count <- 0
+
+# Loop through each row of the dataframe
+for (i in 1:nrow(topicprop_meta_df)) {
+  # Count the number of topics with proportion > 0.05 for the current row
+  topicprop_meta_df[i, "topic_count"] <- sum(topicprop_meta_df[i, c(1:17)] > 0.05)
+}
+
+# Plot the distribution of topics per company
+# center the bins and axis ticks
+# Add the line representing the mean number of topics and add the label, adjusted to the side of the line using hjust
+hist(topicprop_meta_df$topic_count, breaks = seq(-0.5, 9.5, by = 1), col = "grey67", xlab = "Number of Topics", ylab = "Frequency", main = "Distribution of number of topics per startup", xlim = c(1, 8), ylim = c(0, 250)) 
+mtext("Topic Proportion Threshold > 5%", cex = 0.7)
+abline(v = mean(topicprop_meta_df$topic_count), col = "blue3", lty = 2, lwd = 2)
+
+```
+
+
+## Boxplot for average topics per company by founding year
+```{r, fig.height=5, fig.width=8}
+#create boxplot for average topic distribution by year with error bars for +/-2 standard deviation
+# Calculate the average topic proportion for each year
+topicprop_meta_df_boxplot <- topicprop_meta_df %>% group_by(founding_year) %>% summarise(mean_topics = mean(topic_count), sd_topics = sd(topic_count))
+
+# Create the boxplot
+library(ggplot2)
+
+# Plot means with error bars
+ggplot(topicprop_meta_df_boxplot, aes(x = as.factor(founding_year), y = mean_topics)) +
+  geom_point(stat = "identity", fill = "skyblue", color = "black") +
+  geom_errorbar(aes(ymin = mean_topics - sd_topics, ymax = mean_topics + sd_topics),
+                width = 0.2, size = 0.4, color = "black") +
+  labs(x = "Founding Year", y = "Average Number of Topics",
+       title = "Average Number of Topics by Founding Year",
+       caption = "Error bars represent +/- 1 SD", size = 5) +
+  theme_minimal() +
+  coord_cartesian(ylim = c(0, 7))
+
+```
+
+## Heatmap for topic and sector overlaps
+```{r, fig.height=5, fig.width=8}
+# Create a heatmap for cooccurrences of STM topics and "sectors" column in the meta data
+# Assign companies the STM topic with the maximum topic proportion in new Topic column
+topicprop_meta_df$topic_max <- apply(topicprop_meta_df[, 1:17], 1, function(x) which.max(x))
+
+which(is.na(topicprop_meta_df[,1:17]))
+
+# Create a new dataframe with the company names and the assigned topics
+topic_cooccurrence_matrix <- data.frame(company = topicprop_meta_df$company, topic = colnames(topicprop_meta_df)[topicprop_meta_df$topic_max])
+
+# Merge the topic_cooccurrence_matrix with the sector column in original dataframe by Company name
+topic_cooccurrence_matrix <- merge(topic_cooccurrence_matrix, startups_df[, c("company", "sector")], by = "company")
+
+# Create a heatmap grid for the cooccurrence matrix
+library(gplots)
+library(RColorBrewer)
+
+# Create a table for the cooccurrence matrix
+cooccurrence_table <- table(topic_cooccurrence_matrix$topic, topic_cooccurrence_matrix$sector)
+
+# remove 6th and 11th row
+cooccurrence_table <- cooccurrence_table[-c(6,11),]
+
+# Calculate the percentage overlapound(
+cooccurrence_prop <- (cooccurrence_table / rowSums(cooccurrence_table)) * 100
+
+# Melt the data for plotting
+melted_cooccurrence <- as.data.frame(as.table(cooccurrence_prop))
+names(melted_cooccurrence) <- c("Sector", "STM_Topic", "Percentage_Overlap")
+
+# Add margins for title and axis text
+par(mar = c(5, 5, 5, 5))
+ggplot(melted_cooccurrence, aes(x = Sector, y = STM_Topic, fill = Percentage_Overlap)) +
+  ggtitle("Co-occurrence matrix of STM Topics and Company Sectors") +
+  geom_tile(color = "white") +
+  scale_fill_gradientn(colors = brewer.pal(9, "BuPu"), limits = c(0, 100), name = "Percentage Overlap") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + coord_flip()
+
+# Save the heatmap plot
+ggsave("cooccurrence_heatmap.png", width = 10, height = 6)
+```
+
+## Co-occurence matrix heatmap (Correlation Plot)
+```{r, fig.height=5, fig.width=8}
+#plot the covariance matrix of topic prevalences using the topicprop_meta_df
+corr_matrix <- cor(topicprop_meta_df[, 1:17])
+
+# Create a corrplot for the corr_matrix
+library(corrplot)
+corrplot(corr_matrix, order = 'hclust', col = COL2('RdBu', 10), diag = FALSE, tl.col = "black", tl.srt = 45, tl.cex = 0.5)
+```
+
+## Barplot for topic prevalence across all companies
+```{r, fig.height=5, fig.width=8}
+# Create a horizontal bar plot for the topic prevalence across all documents
+topic_prevalence <- apply(stmodel_1$theta, 2, mean)
+topic_prevalence_df <- data.frame(topic = c(1:17), prevalence = topic_prevalence)
+
+# Replace the topic numbers with custom names
+topic_prevalence_df$topic <- c("Fashion, Beauty & Lifestyle", "Business Intelligence & Productivity", "Investor Branding", "SaaS Solutions", "Education & Learning", "AI & IT Security", "Business Accelerators", "Media & Gaming", "Electric Mobility & Sustainable Tech", "Supply Chain & Logistics", "Money & Asset Management Solutions", "Healthcare & Wellness", "Financial Investments & Trading", "Travel & Impact Creation", "Debt Financing", "AgriTech & Delivery Services", "Payments Infrastructure")
+
+# Set wider margins on the left side
+par(mar = c(5, 10, 4, 2))
+ggplot(topic_prevalence_df, aes(x = prevalence, y = reorder(topic, prevalence))) +
+  geom_bar(stat = "identity", width = 0.7, fill = "steelblue") +
+  labs(x = "Prevalence", y = "Topic", title = "Topic Prevalence Across All Company Descriptions") + 
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+  geom_text(aes(label = paste0(round(prevalence * 100, 2), "%")), 
+            position = position_dodge(width = 0.9), 
+            hjust = -0.1, 
+            size = 3)
+
+# save the plot
+ggsave("topic_prevalence_plot.png", width = 10, height = 5)
+
+```
+
+## Barplot for sector distribution across companies
+```{r, fig.height=5, fig.width=8}
+# Create a table for sector distribution and sort it in descending order
+sector_counts <- table(startups_df$sector) %>% sort(decreasing = TRUE)
+
+# Create a data frame with sector counts and proportions
+data <- data.frame(Sector = names(sector_counts),
+                   Count = as.numeric(sector_counts), # Convert to numeric
+                   Proportion = round(sector_counts / sum(sector_counts) * 100, 1))
+
+# Create the ggplot object
+ggplot(data, aes(x = Proportion.Freq, y = reorder(Sector, Count))) + # Use reorder to sort bars by Count
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "Distribution of Companies by Sector", x = "Proportion of Companies") +
+  theme_minimal() +
+  theme(axis.title.y = element_blank(), # Remove y-axis label
+        axis.text.y = element_text(size = 8), # Adjust y-axis text size
+        plot.margin = margin(8, 11, 6, 5), # Set wider margins on the left side
+        plot.title = element_text(size = 14)) + # Adjust main title size
+  geom_text(aes(label = paste0(Proportion.Freq, "%")), hjust = -0.1, size = 3) + # Add proportion labels
+  theme(panel.grid.minor = element_blank()) # Remove minor grid lines
+
+# save the sector distribution plot
+ggsave("sector_distribution_plot.png", width = 10, height = 5)
+
+```
+
+## Histogram for distribution of word length across text descriptions
+```{r}
+# Create a distribution plot of the word length of company descriptions
+word_lengths <- sapply(strsplit(startups_df$description, " "), length)
+word_lengths_df <- data.frame(Word_Length = word_lengths)
+median(word_lengths)
+
+# Create the ggplot object
+# bin width of 20
+ggplot(word_lengths_df, aes(x = Word_Length)) +
+  geom_histogram(binwidth = 10, fill = "grey65", color = "black") +
+  labs(title = "Distribution of Word Length in Company Descriptions", x = "Word Length", y = "Frequency", size = 8) +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 14))
+
+# save the word length distribution plot
+ggsave("word_length_distribution_plot.png", width = 10, height = 5)
+
+```
+
+## Barplot for average funding share by topics
+```{r, fig.height=10, fig.width=25}
+
+topicprop_meta_df$topic_max <- apply(topicprop_meta_df[, 1:17], 1, function(x) which.max(x))
+
+which(is.na(topicprop_meta_df[,1:17]))
+
+# Create a new dataframe with the company names and the assigned topics
+topic_funding_share <- data.frame(company = topicprop_meta_df$company, topic = colnames(topicprop_meta_df)[topicprop_meta_df$topic_max], funding = topicprop_meta_df$funding)
+
+# Group the data by topic and calculate the average funding share
+topic_funding_avg <- topic_funding_share %>% group_by(topic) %>% summarise(avg_funding_share = mean(funding))
+
+# Create a bar plot for the average funding share by topic and scale the (rbrewer) colors by topics
+# Make the text labels vertical at 90 degree and adjust the dodge position
+ggplot(topic_funding_avg, aes(x = reorder(topic, avg_funding_share), y = avg_funding_share, fill = topic)) +
+  geom_bar(stat = "identity", width = 0.7) +
+  labs(x = "Topic", y = "Average Funding Share", title = "Average Funding Share by Topic") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = paste0("$", round(avg_funding_share, 2), " Mn")), 
+            position = position_dodge(width = 0), 
+            vjust = 0.2,
+            hjust = -0.1,
+            size = 4, angle = 0) + coord_flip()
+ggsave("average_funding_share_plot.png", width = 25, height = 10)
+
+
+```
+
+## Plot of effect estimates of foudning year
+```{r, fig.height=8, fig.width=17}
+
+effect_estimates <- estimateEffect(1:17 ~ founding_year + city_tier + funding,  stmodel_1, meta = stm_input$meta)
+
+summary <- summary(effect_estimates)
+
+topic_labels <- c("T1:Fashion, Beauty & Lifestyle", "T2:Business Intelligence & Productivity", "T3:Investor Branding", "T4:Business Process Automation & Enterprise Solutions", "T5:EdTech", "T6:AI & IT Security", "T7:Business Accelerators", "T8:Media & Gaming", "T9:Electric Mobility & Sustainable Tech", "T10:Supply Chain & Logistics", "T11:Wealth & Asset Management Solutions", "T12:Healthcare & Wellness", "T13:Financial Investments & Stock Trading", "T14:Travel & Impact Creation", "T15:Debt Financing", "T16:AgriTech & Farm2Consumers", "T17:Payments Infrastructure")
+
+# Combine the plots
+
+par(mfrow = c(4, 2))
+# Plot the effect estimates by founding year for topic 2
+plot(effect_estimates, covariate = "founding_year", model = stmodel_1, topics = 2, ylab = "Topics", xlab = "Effect Estimate", main = "Effect Estimates of Founding Year on Topic 2", method="continuous", custom.labels = topic_labels[2], labeltype = "custom")
+
+# Plot the effect estimates by founding year for topic 5
+plot(effect_estimates, covariate = "founding_year", model = stmodel_1, topics = 5, ylab = "Topics", xlab = "Effect Estimate", main = "Effect Estimates of Founding Year on Topic 5", method="continuous", custom.labels = topic_labels[5], labeltype = "custom")
+
+# Plot the effect estimates by founding year for topic 4
+plot(effect_estimates, covariate = "founding_year", model = stmodel_1, topics = 4, ylab = "Topics", xlab = "Effect Estimate", main = "Effect Estimates of Founding Year on Topic 4", method="continuous", custom.labels = topic_labels[4], labeltype = "custom")
+
+# Plot the effect estimates by founding year for topic 12
+plot(effect_estimates, covariate = "founding_year", model = stmodel_1, topics = 12, ylab = "Topics", xlab = "Effect Estimate", main = "Effect Estimates of Founding Year on Topic 12", method="continuous", custom.labels = topic_labels[12], labeltype = "custom")
+
+# Plot the effect estimates by founding year for topic 16
+plot(effect_estimates, covariate = "founding_year", model = stmodel_1, topics = 16, ylab = "Topics", xlab = "Effect Estimate", main = "Effect Estimates of Founding Year on Topic 16", method="continuous", custom.labels = topic_labels[16], labeltype = "custom")
+
+# Plot the effect estimates by founding year for topic 1
+plot(effect_estimates, covariate = "founding_year", model = stmodel_1, topics = 1, ylab = "Topics", xlab = "Effect Estimate", main = "Effect Estimates of Founding Year on Topic 1", method="continuous", custom.labels = topic_labels[1], labeltype = "custom")
+
+# Plot the effect estimates by founding year for topic 9
+plot(effect_estimates, covariate = "founding_year", model = stmodel_1, topics = 9, ylab = "Topics", xlab = "Effect Estimate", main = "Effect Estimates of Founding Year on Topic 9", method="continuous", custom.labels = topic_labels[9], labeltype = "custom")
+
+
+# Plot the effect estimates by founding year for topic 5
+plot(effect_estimates, covariate = "founding_year", model = stmodel_1, topics = 5, ylab = "Topics", xlab = "Effect Estimate", main = "Effect Estimates by Founding Year", method="continuous", custom.labels = topic_labels[5], labeltype = "custom")
+
+# Plot the effect estimates by founding year for topic 6
+plot(effect_estimates, covariate = "founding_year", model = stmodel_1, topics = 6, ylab = "Topics", xlab = "Effect Estimate", main = "Effect Estimates by Founding Year", method="continuous", custom.labels = topic_labels[6], labeltype = "custom")
+
+# Plot the effect estimates by country for topic 14
+plot(effect_estimates, covariate = "country", model = stmodel_1, topics = 14, xlim = c(-1, 1), ylab = "Country", xlab = "Effect Estimate", main = "Effect Estimates by Country", method='difference', cov.value1 = "India", cov.value2 = "Singapore")
+
+
+```
+
+## Plot of effect estimates by city tier
+```{r}
+par(mfrow = c(1, 2))
+# Compare each city tier 2 estimates with tier1 differences, with custom labels
+plot(effect_estimates, covariate = "city_tier", model = stmodel_1, topics = c(1, 2, 5, 4, 9, 12, 16, 17), xlim = c(-1, 1), ylab = "Topics", xlab = "Effect Estimate", main = "Effect Estimates of Tier 2 compared to Tier 1", method='difference', cov.value1 = "Tier_1", cov.value2 = "Tier_2", custom.labels = c(topic_labels[1], topic_labels[2], topic_labels[5], topic_labels[4], topic_labels[9], topic_labels[12], topic_labels[16], topic_labels[17]), labeltype = "custom")
+
+# Compare each city tier 3 estimates with Tier 1 differences, with custom labels
+plot(effect_estimates, covariate = "city_tier", model = stmodel_1, topics = c(1, 2, 5, 4, 9, 12, 16, 17), xlim = c(-1, 1), ylab = "Topics", xlab = "Effect Estimate", main = "Effect Estimates of Tier 3 compared to Tier 1", method='difference', cov.value1 = "Tier_1", cov.value2 = "Tier_3", custom.labels = c(topic_labels[1], topic_labels[2], topic_labels[5], topic_labels[4], topic_labels[9], topic_labels[12], topic_labels[16], topic_labels[17]), labeltype = "custom")
+
+```
+
+
+
